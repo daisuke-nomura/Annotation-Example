@@ -44,6 +44,8 @@ public class AnnotationProcessor extends AbstractProcessor{
 
     private static final String SUFFIX = "Entity";
 
+    private Class<? extends Annotation> annotation;
+
     @Override
     public synchronized void init(ProcessingEnvironment processingEnvironment) {
         super.init(processingEnvironment);
@@ -54,64 +56,62 @@ public class AnnotationProcessor extends AbstractProcessor{
         final List<Class<? extends Annotation>> list = new ArrayList<>();
         list.add(AnnotationObject.class);
 
-        for (final Class<? extends  Annotation> annotation : list) {
-            Observable
-                    .fromIterable(list)
-                    .flatMapIterable(new Function<Class<? extends Annotation>, Set<? extends Element>>() {
-                        @Override
-                        public Set<? extends Element> apply(Class<? extends Annotation> aClass) throws Exception {
-                            return roundEnvironment.getElementsAnnotatedWith(aClass);
-                        }
-                    })
-                    .filter(new Predicate<Element>() {
-                        @Override
-                        public boolean test(Element element) throws Exception {
-                            return element instanceof TypeElement;
-                        }
-                    })
-                    .blockingForEach(new Consumer<Element>() {
-                        @Override
-                        public void accept(Element element) throws Exception {
-                            TypeElement typeElement = (TypeElement) element;
+        Observable
+                .fromIterable(list)
+                .flatMapIterable(new Function<Class<? extends Annotation>, Set<? extends Element>>() {
+                    @Override
+                    public Set<? extends Element> apply(Class<? extends Annotation> aClass) throws Exception {
+                        annotation = aClass;
+                        return roundEnvironment.getElementsAnnotatedWith(aClass);
+                    }
+                })
+                .filter(new Predicate<Element>() {
+                    @Override
+                    public boolean test(Element element) throws Exception {
+                        return element instanceof TypeElement;
+                    }
+                })
+                .blockingForEach(new Consumer<Element>() {
+                    @Override
+                    public void accept(Element element) throws Exception {
+                        TypeElement typeElement = (TypeElement) element;
 
-                            if (annotation.equals(AnnotationObject.class)) {
-                                AnnotationObject annotationObject = typeElement.getAnnotation(AnnotationObject.class);
-                                //annotation name() value
-                                System.out.println(annotationObject.name());
+                        if (annotation.equals(AnnotationObject.class)) {
+                            AnnotationObject annotationObject = typeElement.getAnnotation(AnnotationObject.class);
+                            //annotation name() value
+                            System.out.println(annotationObject.name());
 
-                                final TypeSpec.Builder builder = TypeSpec
-                                        .classBuilder(typeElement.getSimpleName() + SUFFIX)
-                                        .addModifiers(Modifier.PUBLIC);
+                            final TypeSpec.Builder builder = TypeSpec
+                                    .classBuilder(typeElement.getSimpleName() + SUFFIX)
+                                    .addModifiers(Modifier.PUBLIC)
+                                    .addMethod(constructor());
 
-                                builder.addMethod(constructor());
-
-                                Observable
-                                        .fromIterable(typeElement.getEnclosedElements())
-                                        .filter(new Predicate<Element>() {
-                                            @Override
-                                            public boolean test(Element element) throws Exception {
-                                                return element instanceof VariableElement;
+                            Observable
+                                    .fromIterable(typeElement.getEnclosedElements())
+                                    .filter(new Predicate<Element>() {
+                                        @Override
+                                        public boolean test(Element element) throws Exception {
+                                            return element instanceof VariableElement;
+                                        }
+                                    })
+                                    .blockingForEach(new Consumer<Element>() {
+                                        @Override
+                                        public void accept(Element element) throws Exception {
+                                            if (element.getAnnotation(AnnotationKey.class) != null) {
+                                                builder.addField(field(element));
+                                                builder.addMethod(getter(element));
+                                                builder.addMethod(setter(element));
                                             }
-                                        })
-                                        .blockingForEach(new Consumer<Element>() {
-                                            @Override
-                                            public void accept(Element element) throws Exception {
-                                                if (element.getAnnotation(AnnotationKey.class) != null) {
-                                                    builder.addField(field(element));
-                                                    builder.addMethod(getter(element));
-                                                    builder.addMethod(setter(element));
-                                                }
-                                            }
-                                        });
+                                        }
+                                    });
 
-                                String packageName = processingEnv.getElementUtils().getPackageOf(element).getQualifiedName().toString();
+                            String packageName = processingEnv.getElementUtils().getPackageOf(element).getQualifiedName().toString();
 
-                                JavaFile javaFile = JavaFile.builder(packageName, builder.build()).build();
-                                javaFile.writeTo(processingEnv.getFiler());
-                            }
+                            JavaFile javaFile = JavaFile.builder(packageName, builder.build()).build();
+                            javaFile.writeTo(processingEnv.getFiler());
                         }
-                    });
-        }
+                    }
+                });
 
         return false;
     }
